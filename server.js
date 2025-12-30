@@ -84,6 +84,7 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(port, () => {
+  console.log('TEST_VAR:', process.env.TEST_VAR);
   console.log('Env status', {
     openaiApiKeyPresent: Boolean(process.env.OPENAI_API_KEY),
     chatkitWorkflowIdPresent: Boolean(process.env.CHATKIT_WORKFLOW_ID),
