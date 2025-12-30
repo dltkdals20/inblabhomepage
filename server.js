@@ -84,5 +84,10 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(port, () => {
+  console.log('Env status', {
+    openaiApiKeyPresent: Boolean(process.env.OPENAI_API_KEY),
+    chatkitWorkflowIdPresent: Boolean(process.env.CHATKIT_WORKFLOW_ID),
+    allowedOriginsConfigured: Boolean(allowedOriginsEnv),
+  });
   console.log(`Server listening on port ${port}`);
 });
