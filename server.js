@@ -1,8 +1,23 @@
 const express = require('express');
 const cors = require('cors');
+// ✅ 슈퍼베이스 라이브러리 추가
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// ✅ 슈퍼베이스 연결 설정
+// Railway Variables에 이 값들이 꼭 있어야 합니다.
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+let supabase;
+
+if (supabaseUrl && supabaseKey) {
+  supabase = createClient(supabaseUrl, supabaseKey);
+  console.log("✅ Supabase Connected!");
+} else {
+  console.warn("⚠️ Warning: SUPABASE_URL or SUPABASE_KEY is missing.");
+}
 
 const allowedOriginsEnv = process.env.ALLOWED_ORIGINS;
 let corsOptions;
@@ -15,7 +30,7 @@ if (allowedOriginsEnv) {
 
   corsOptions = {
     origin(origin, callback) {
-      if (!origin) return callback(null, true); // allow tools like curl/Postman
+      if (!origin) return callback(null, true); 
       if (allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error('Not allowed by CORS'));
     },
@@ -28,9 +43,10 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 app.get('/', (_req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, db: supabase ? "connected" : "disconnected" });
 });
 
+// 1. 기존 채팅 세션 발급 (유지)
 app.post('/api/chatkit/session', async (req, res) => {
   const apiKey = process.env.OPENAI_API_KEY;
   const workflowId = process.env.CHATKIT_WORKFLOW_ID;
@@ -74,6 +90,39 @@ app.post('/api/chatkit/session', async (req, res) => {
   }
 });
 
+// ✅ 2. [업그레이드] 검색어 통계 -> 슈퍼베이스 저장
+app.post('/api/chatkit/log', async (req, res) => {
+  try {
+    const { user, query, type } = req.body;
+    
+    // 로그는 일단 콘솔에도 찍고
+    console.log(`[LOG] User:${user} | Query:${query}`);
+
+    // 슈퍼베이스가 연결되어 있다면 DB에 저장
+    if (supabase) {
+      const { error } = await supabase
+        .from('chat_logs') // 아까 만든 테이블 이름
+        .insert([
+          { 
+            user_id: user, 
+            query: query, 
+            type: type || 'click' 
+          }
+        ]);
+      
+      if (error) {
+        console.error("Supabase Insert Error:", error);
+        return res.status(500).json({ error: error.message });
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Log error:", error);
+    res.status(500).json({ error: "Logging failed" });
+  }
+});
+
 app.use((err, _req, res, _next) => {
   if (err && err.message === 'Not allowed by CORS') {
     return res.status(403).json({ error: 'Origin not allowed' });
@@ -84,11 +133,5 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(port, () => {
-  console.log('TEST_VAR:', process.env.TEST_VAR);
-  console.log('Env status', {
-    openaiApiKeyPresent: Boolean(process.env.OPENAI_API_KEY),
-    chatkitWorkflowIdPresent: Boolean(process.env.CHATKIT_WORKFLOW_ID),
-    allowedOriginsConfigured: Boolean(allowedOriginsEnv),
-  });
   console.log(`Server listening on port ${port}`);
 });
