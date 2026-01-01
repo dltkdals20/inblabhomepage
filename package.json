@@ -1,17 +1,15 @@
 {
-  "name": "chatkit-session-server",
+  "name": "inblab-custom-server",
   "version": "1.0.0",
-  "description": "Simple Express server to proxy OpenAI ChatKit session issuance",
+  "description": "Custom Chat Server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "engines": {
-    "node": ">=20"
-  },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "@supabase/supabase-js": "^2.39.0"
+    "@supabase/supabase-js": "^2.39.0",
+    "openai": "^4.28.0"
   }
 }
