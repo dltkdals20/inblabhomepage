@@ -1,7 +1,7 @@
 {
   "name": "inblab-custom-server",
   "version": "1.0.0",
-  "description": "Custom Chat Server",
+  "description": "Custom Chat Server for Assistants API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

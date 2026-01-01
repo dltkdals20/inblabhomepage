@@ -10,6 +10,7 @@ const port = process.env.PORT || 3000;
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 const openaiApiKey = process.env.OPENAI_API_KEY;
+const assistantId = process.env.ASSISTANT_ID; // 🔥 Railway에 등록한 그 ID (asst_...)
 
 // 2. 연결 설정
 let supabase;
@@ -24,7 +25,11 @@ if (openaiApiKey) {
   openai = new OpenAI({ apiKey: openaiApiKey });
   console.log("✅ OpenAI Connected!");
 } else {
-  console.error("❌ Error: OPENAI_API_KEY is missing in Railway Variables!");
+  console.error("❌ Error: OPENAI_API_KEY Missing");
+}
+
+if (!assistantId) {
+  console.error("❌ Error: ASSISTANT_ID Missing (Variables 확인 필요)");
 }
 
 // 3. CORS 설정
@@ -38,43 +43,66 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// 4. 채팅 API (자체 UI 연동용)
+// 4. [핵심 변경] 에이전트(Assistants API) 실행 로직
 app.post('/api/chat/message', async (req, res) => {
   const { user, message } = req.body;
 
   try {
-    // A. 질문 저장 (chat_history 테이블)
+    // A. 사용자 질문 저장 (DB)
     if (supabase) {
       await supabase.from('chat_history').insert([
         { user_id: user, query: message, type: 'user_question' }
       ]);
     }
 
-    // B. AI 답변 요청
-    if (!openai) throw new Error("OpenAI Not Initialized");
+    if (!openai || !assistantId) throw new Error("OpenAI or Assistant ID not configured");
 
-    const completion = await openai.chat.completions.create({
-      messages: [
-        { role: "system", content: "당신은 Inblab의 비즈니스 코칭 및 교육 전문 상담 봇입니다. 한국어로 친절하고 명확하게 답변하세요." },
-        { role: "user", content: message }
-      ],
-      model: "gpt-4o", // 모델 설정 (gpt-4o 또는 gpt-3.5-turbo)
+    console.log(`🤖 에이전트 실행 시작... (ID: ${assistantId})`);
+
+    // B. 스레드 생성 및 실행 (Create and Run)
+    // 질문을 던지고, 파일 검색이 끝날 때까지 기다립니다.
+    const run = await openai.beta.threads.createAndRunPoll({
+      assistant_id: assistantId,
+      thread: {
+        messages: [
+          { role: "user", content: message },
+        ],
+      },
     });
 
-    const aiResponse = completion.choices[0].message.content;
+    let aiResponse = "";
 
-    // C. 답변 저장 (chat_history 테이블)
+    // C. 답변 가져오기
+    if (run.status === 'completed') {
+      const messages = await openai.beta.threads.messages.list(
+        run.thread_id
+      );
+      
+      // 가장 최근 메시지(AI 답변) 찾기
+      const lastMessage = messages.data.find(m => m.role === 'assistant');
+      
+      if (lastMessage && lastMessage.content[0].type === 'text') {
+        aiResponse = lastMessage.content[0].text.value;
+        
+        // 🧹 지저분한 출처 표시(【4:0†source】) 제거하기
+        aiResponse = aiResponse.replace(/【.*?】/g, ''); 
+      }
+    } else {
+      aiResponse = "죄송합니다. 답변을 생성하는 데 실패했습니다. (Status: " + run.status + ")";
+    }
+
+    // D. AI 답변 저장 (DB)
     if (supabase) {
       await supabase.from('chat_history').insert([
         { user_id: user, query: aiResponse, type: 'ai_answer' }
       ]);
     }
 
-    // D. 답변 반환
+    // E. 결과 반환
     res.json({ reply: aiResponse });
 
   } catch (error) {
-    console.error("Chat Error:", error);
+    console.error("Agent Error:", error);
     res.status(500).json({ error: "Server Error" });
   }
 });
